@@ -25,7 +25,7 @@ const speechRecognitionOptions = { continuous: true, interimResults: true, langu
 const popIn = keyframes` 0% { transform: scale(0.9); } 100% { transform: scale(1.05); }`;
 const shake = keyframes` 0%, 100% { transform: translateX(0); } 10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); } 20%, 40%, 60%, 80% { transform: translateX(5px); }`;
 
-const StyledCard = styled(Paper, { shouldForwardProp: (prop) => prop !== 'feedback' })<{ feedback: Feedback }>(({ theme, feedback }) => ({
+const StyledCard = styled(Paper, { shouldForwardProp: (prop) => prop !== 'feedback' })<{ feedback: Feedback }>(({ feedback }) => ({
   aspectRatio: '1 / 1',
   display: 'flex',
   alignItems: 'center',
@@ -69,7 +69,7 @@ const RhythmGame: React.FC = () => {
   // --- Initial Setup ---
   useEffect(() => {
     audioRef.current = new Audio(BackgroundMusic);
-    audioRef.current.loop = true;
+    audioRef.current.loop = false;
     // *** CHANGED: Use the new image generation function
     setGameImages(getRandomImagesWithDuplicates(allImages, TOTAL_IMAGES));
   }, []);
