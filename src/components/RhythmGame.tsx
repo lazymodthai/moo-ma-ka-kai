@@ -18,7 +18,7 @@ import { allImages, type ImageDataObject } from '../data/imageData';
 import BackgroundMusic from '../assets/background-music.mp3';
 
 // --- Constants & Config ---
-const TEMPO_BPM = 183;
+const TEMPO_BPM = 182;
 const TOTAL_IMAGES = 8;
 const TOTAL_ROUNDS = 10;
 const PRE_GAME_COUNTDOWN = 16;
@@ -86,27 +86,59 @@ const RhythmGame: React.FC = () => {
     try {
       console.log("Preloading audio...");
       
+      // Check if BackgroundMusic is available
+      if (!BackgroundMusic) {
+        console.warn("BackgroundMusic asset not found, skipping audio preload");
+        return true; // Consider it successful to not block the game
+      }
+
+      console.log("Creating AudioContext...");
       if (!audioContextRef.current) {
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+        console.log("AudioContext created:", audioContextRef.current.state);
       }
       const audioContext = audioContextRef.current;
 
       if (audioContext.state === 'suspended') {
+        console.log("AudioContext suspended, resuming...");
         await audioContext.resume();
+        console.log("AudioContext resumed:", audioContext.state);
       }
 
-      const response = await fetch(BackgroundMusic);
-      if (!response.ok) throw new Error(`Audio fetch failed: ${response.status}`);
+      console.log("Fetching audio file from:", BackgroundMusic);
+      const response = await fetch(BackgroundMusic, {
+        method: 'GET',
+        headers: {
+          'Accept': 'audio/*'
+        }
+      });
       
+      console.log("Audio fetch response:", response.status, response.statusText);
+      if (!response.ok) {
+        throw new Error(`Audio fetch failed: ${response.status} ${response.statusText}`);
+      }
+      
+      console.log("Converting to ArrayBuffer...");
       const arrayBuffer = await response.arrayBuffer();
-      audioBufferRef.current = await audioContext.decodeAudioData(arrayBuffer);
+      console.log("ArrayBuffer size:", arrayBuffer.byteLength, "bytes");
       
-      console.log("Audio preloaded successfully");
+      console.log("Decoding audio data...");
+      audioBufferRef.current = await audioContext.decodeAudioData(arrayBuffer);
+      console.log("Audio decoded successfully, duration:", audioBufferRef.current.duration, "seconds");
+      
       return true;
-    } catch (error) {
+    } catch (error:any) {
       console.error("Error preloading audio:", error);
-      setErrorMessage("ไม่สามารถโหลดเพลงพื้นหลังได้");
-      return false;
+      console.error("Error details:", {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      });
+      
+      // Don't block the game for audio issues
+      console.log("Audio preload failed, but continuing without background music");
+      setErrorMessage("ไม่สามารถโหลดเพลงพื้นหลังได้ แต่สามารถเล่นเกมได้");
+      return true; // Return true to not block the game
     }
   };
 
@@ -156,22 +188,36 @@ const RhythmGame: React.FC = () => {
   const preloadImages = async (): Promise<boolean> => {
     try {
       console.log("Preloading images...");
-      const imagePromises = allImages.map(item => 
+      console.log("Total images to load:", allImages.length);
+      
+      let loadedCount = 0;
+      const imagePromises = allImages.map((item, index) => 
         new Promise<void>((resolve, reject) => {
           const img = new Image();
-          img.onload = () => resolve();
-          img.onerror = () => reject(new Error(`Failed to load image: ${item.image}`));
+          img.onload = () => {
+            loadedCount++;
+            console.log(`Image ${loadedCount}/${allImages.length} loaded: ${item.text}`);
+            resolve();
+          };
+          img.onerror = (error) => {
+            console.error(`Failed to load image ${index + 1}:`, item.image, error);
+            // Don't reject, just resolve to continue with other images
+            loadedCount++;
+            resolve();
+          };
           img.src = item.image;
         })
       );
 
       await Promise.all(imagePromises);
-      console.log("All images preloaded successfully");
+      console.log(`Images preloading completed: ${loadedCount}/${allImages.length} loaded`);
+      
+      // Consider successful even if some images failed
       return true;
     } catch (error) {
       console.error("Error preloading images:", error);
       setErrorMessage("ไม่สามารถโหลดรูปภาพได้ครบถ้วน");
-      return false;
+      return true; // Still allow game to continue
     }
   };
 
