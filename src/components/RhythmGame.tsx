@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
-import { Box, Grid, Paper, Typography, Button, Stack, keyframes } from '@mui/material';
+import { Box, Grid, Paper, Typography, Button, Stack, keyframes, CircularProgress, Alert } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import ScoreboardIcon from '@mui/icons-material/Scoreboard';
 import ReplayIcon from '@mui/icons-material/Replay';
@@ -10,13 +10,15 @@ import MicIcon from '@mui/icons-material/Mic';
 import MicOffIcon from '@mui/icons-material/MicOff';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import WarningIcon from '@mui/icons-material/Warning';
 
 import { useInterval } from '../hooks/useInterval';
 import { allImages, type ImageDataObject } from '../data/imageData';
 import BackgroundMusic from '../assets/background-music.mp3';
 
 // --- Constants & Config ---
-const TEMPO_BPM = 182;
+const TEMPO_BPM = 183;
 const TOTAL_IMAGES = 8;
 const TOTAL_ROUNDS = 10;
 const PRE_GAME_COUNTDOWN = 16;
@@ -49,8 +51,13 @@ const getRandomImagesWithDuplicates = (array: ImageDataObject[], count: number):
 };
 
 // --- Type Definitions ---
-type GameState = 'permission_prompt' | 'permission_denied' | 'idle' | 'countdown' | 'running' | 'intermission' | 'finished';
+type GameState = 'permission_prompt' | 'permission_denied' | 'loading' | 'ready' | 'countdown' | 'running' | 'intermission' | 'finished';
 type Feedback = 'pending' | 'correct' | 'incorrect';
+type ResourceStatus = {
+  audio: boolean;
+  speech: boolean;
+  images: boolean;
+};
 
 // --- Component ---
 const RhythmGame: React.FC = () => {
@@ -63,6 +70,10 @@ const RhythmGame: React.FC = () => {
   const [gameImages, setGameImages] = useState<ImageDataObject[]>([]);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [feedback, setFeedback] = useState<Feedback[]>(Array(TOTAL_IMAGES).fill('pending'));
+  const [resourceStatus, setResourceStatus] = useState<ResourceStatus>({ audio: false, speech: false, images: false });
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [errorMessage, setErrorMessage] = useState('');
+  
   const { transcript, listening, resetTranscript, browserSupportsSpeechRecognition } = useSpeechRecognition();
 
   // Web Audio API Refs
@@ -70,31 +81,193 @@ const RhythmGame: React.FC = () => {
   const audioBufferRef = useRef<AudioBuffer | null>(null);
   const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
 
+  // Resource preloading functions
+  const preloadAudio = async (): Promise<boolean> => {
+    try {
+      console.log("Preloading audio...");
+      
+      if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+      const audioContext = audioContextRef.current;
+
+      if (audioContext.state === 'suspended') {
+        await audioContext.resume();
+      }
+
+      const response = await fetch(BackgroundMusic);
+      if (!response.ok) throw new Error(`Audio fetch failed: ${response.status}`);
+      
+      const arrayBuffer = await response.arrayBuffer();
+      audioBufferRef.current = await audioContext.decodeAudioData(arrayBuffer);
+      
+      console.log("Audio preloaded successfully");
+      return true;
+    } catch (error) {
+      console.error("Error preloading audio:", error);
+      setErrorMessage("ไม่สามารถโหลดเพลงพื้นหลังได้");
+      return false;
+    }
+  };
+
+  const preloadSpeechRecognition = async (): Promise<boolean> => {
+    try {
+      console.log("Testing speech recognition...");
+      
+      if (!browserSupportsSpeechRecognition) {
+        console.error("Browser doesn't support speech recognition");
+        return false;
+      }
+
+      return new Promise((resolve) => {
+        const timeoutId = setTimeout(() => {
+          console.log("Speech recognition test completed (timeout - assuming success)");
+          SpeechRecognition.stopListening();
+          resolve(true); // Assume success on timeout
+        }, 2000);
+
+        try {
+          SpeechRecognition.startListening({
+            ...speechRecognitionOptions,
+            continuous: false, // Use non-continuous for testing
+          });
+
+          // Auto-resolve as success after a short delay
+          setTimeout(() => {
+            clearTimeout(timeoutId);
+            SpeechRecognition.stopListening();
+            console.log("Speech recognition test completed successfully");
+            resolve(true);
+          }, 1000);
+
+        } catch (startError) {
+          console.error("Failed to start speech recognition:", startError);
+          clearTimeout(timeoutId);
+          resolve(false);
+        }
+      });
+    } catch (error) {
+      console.error("Error testing speech recognition:", error);
+      setErrorMessage("ไม่สามารถเริ่มระบบรู้จำเสียงได้");
+      return false;
+    }
+  };
+
+  const preloadImages = async (): Promise<boolean> => {
+    try {
+      console.log("Preloading images...");
+      const imagePromises = allImages.map(item => 
+        new Promise<void>((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => resolve();
+          img.onerror = () => reject(new Error(`Failed to load image: ${item.image}`));
+          img.src = item.image;
+        })
+      );
+
+      await Promise.all(imagePromises);
+      console.log("All images preloaded successfully");
+      return true;
+    } catch (error) {
+      console.error("Error preloading images:", error);
+      setErrorMessage("ไม่สามารถโหลดรูปภาพได้ครบถ้วน");
+      return false;
+    }
+  };
+
+  // Initialize resources after permission is granted
+  const initializeResources = async () => {
+    console.log("Starting resource initialization...");
+    setGameState('loading');
+    setLoadingProgress(0);
+    setErrorMessage('');
+    
+    const newResourceStatus = { audio: false, speech: false, images: false };
+
+    try {
+      // Preload audio
+      console.log("Step 1/3: Preloading audio...");
+      newResourceStatus.audio = await preloadAudio();
+      setResourceStatus({ ...newResourceStatus });
+      setLoadingProgress(33);
+
+      // Test speech recognition
+      console.log("Step 2/3: Testing speech recognition...");
+      newResourceStatus.speech = await preloadSpeechRecognition();
+      setResourceStatus({ ...newResourceStatus });
+      setLoadingProgress(66);
+
+      // Preload images
+      console.log("Step 3/3: Preloading images...");
+      newResourceStatus.images = await preloadImages();
+      setResourceStatus({ ...newResourceStatus });
+      setLoadingProgress(100);
+
+      // Check if all resources are ready
+      const allResourcesReady = Object.values(newResourceStatus).every(status => status);
+      
+      console.log("Resource loading complete:", newResourceStatus);
+      console.log("All resources ready:", allResourcesReady);
+      
+      if (allResourcesReady) {
+        console.log("All resources loaded successfully! Game is ready.");
+        setGameState('ready');
+      } else {
+        console.log("Some resources failed to load, but allowing user to continue");
+        setGameState('ready'); // Allow user to try anyway, but show warnings
+      }
+    } catch (error:any) {
+      console.error("Error during resource initialization:", error);
+      setErrorMessage(`เกิดข้อผิดพลาดในการเตรียมความพร้อม: ${error.message}`);
+      setGameState('ready'); // Still allow user to try
+    }
+  };
+
   // Initial Permission & Asset Check Hook
   useEffect(() => {
     const checkInitialPermission = async () => {
       try {
+        console.log("Checking initial permission...");
+        
         if (!navigator.permissions) {
-          console.warn("Permissions API not supported, defaulting to idle.");
-          setGameState('idle');
+          console.warn("Permissions API not supported, trying direct media access test.");
+          // Try to access media directly to test permission
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            stream.getTracks().forEach(track => track.stop()); // Stop immediately after test
+            console.log("Media access test successful, initializing resources");
+            initializeResources();
+          } catch (mediaError) {
+            console.log("Media access test failed, showing permission prompt");
+            setGameState('permission_prompt');
+          }
           return;
         }
+        
         const permissionStatus = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+        console.log("Permission status:", permissionStatus.state);
         
         if (permissionStatus.state === 'granted') {
-          setGameState('idle');
+          console.log("Permission already granted, initializing resources");
+          initializeResources();
         } else if (permissionStatus.state === 'denied') {
+          console.log("Permission denied");
           setGameState('permission_denied');
+        } else {
+          console.log("Permission prompt needed");
+          setGameState('permission_prompt');
         }
         
         permissionStatus.onchange = () => {
-            if(permissionStatus.state === 'granted') {
-                setGameState('idle');
-            }
+          console.log("Permission status changed to:", permissionStatus.state);
+          if (permissionStatus.state === 'granted') {
+            initializeResources();
+          }
         };
       } catch (error) {
         console.error("Error checking initial microphone permission:", error);
-        setGameState('idle');
+        console.log("Fallback: showing permission prompt");
+        setGameState('permission_prompt');
       }
     };
 
@@ -105,11 +278,11 @@ const RhythmGame: React.FC = () => {
   // Speech Recognition Keep-Alive Hook
   useEffect(() => { 
     const isGameActive = ['countdown', 'running', 'intermission'].includes(gameState);
-    if (isGameActive && !listening) { 
+    if (isGameActive && !listening && resourceStatus.speech) { 
       console.log("Speech recognition keep-alive triggered. Restarting...");
       SpeechRecognition.startListening(speechRecognitionOptions); 
     } 
-  }, [listening, gameState]);
+  }, [listening, gameState, resourceStatus.speech]);
 
   // Real-time Speech Checking Hook
   useEffect(() => { 
@@ -159,24 +332,20 @@ const RhythmGame: React.FC = () => {
         } 
         break; 
     } 
-  }, !['idle', 'finished', 'permission_prompt', 'permission_denied'].includes(gameState) ? MS_PER_BEAT : null);
+  }, !['ready', 'finished', 'permission_prompt', 'permission_denied', 'loading'].includes(gameState) ? MS_PER_BEAT : null);
 
   // Web Audio API Control Functions
   const playMusic = async () => {
     try {
-      if (!audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      if (!audioContextRef.current || !audioBufferRef.current) {
+        console.warn("Audio not ready, skipping music playback");
+        return;
       }
+
       const audioContext = audioContextRef.current;
 
       if (audioContext.state === 'suspended') {
         await audioContext.resume();
-      }
-
-      if (!audioBufferRef.current) {
-        const response = await fetch(BackgroundMusic);
-        const arrayBuffer = await response.arrayBuffer();
-        audioBufferRef.current = await audioContext.decodeAudioData(arrayBuffer);
       }
 
       if (audioSourceRef.current) {
@@ -191,7 +360,7 @@ const RhythmGame: React.FC = () => {
 
       audioSourceRef.current = source;
     } catch (error) {
-      console.error("Error playing music with Web Audio API:", error);
+      console.error("Error playing music:", error);
     }
   };
 
@@ -207,15 +376,7 @@ const RhythmGame: React.FC = () => {
     try {
       await navigator.mediaDevices.getUserMedia({ audio: true });
       console.log("Microphone permission granted!");
-      
-      // "Prime the Engine" FIX
-      SpeechRecognition.startListening(speechRecognitionOptions);
-      setTimeout(() => {
-        SpeechRecognition.stopListening();
-        console.log("Speech engine primed and ready.");
-        setGameState('idle');
-      }, 200);
-
+      initializeResources();
     } catch (error) {
       console.error("Microphone permission was denied:", error);
       setGameState('permission_denied');
@@ -223,6 +384,12 @@ const RhythmGame: React.FC = () => {
   };
 
   const startGame = () => {
+    // Double-check resources before starting
+    const allResourcesReady = Object.values(resourceStatus).every(status => status);
+    if (!allResourcesReady) {
+      console.warn("Starting game with some resources not ready");
+    }
+
     setScore(0);
     setCurrentRound(1);
     setFeedback(Array(TOTAL_IMAGES).fill('pending'));
@@ -231,48 +398,118 @@ const RhythmGame: React.FC = () => {
     resetTranscript();
     setCountdown(PRE_GAME_COUNTDOWN);
     setGameState('countdown');
-    SpeechRecognition.startListening(speechRecognitionOptions);
-    playMusic();
+    
+    if (resourceStatus.speech) {
+      SpeechRecognition.startListening(speechRecognitionOptions);
+    }
+    if (resourceStatus.audio) {
+      playMusic();
+    }
   };
 
   const stopGame = () => { 
-    setGameState('idle'); 
+    setGameState('ready'); 
     SpeechRecognition.stopListening(); 
     stopMusic();
     setActiveIndex(-1); 
   };
   
   // --- Render Logic ---
-  if (!browserSupportsSpeechRecognition) return <Typography color="error">Browser doesn't support speech recognition.</Typography>;
-  const getBorderColor = (index: number): string => { if (feedback[index] === 'correct') return '#4caf50'; if (feedback[index] === 'incorrect') return '#f44336'; if (index === activeIndex) return '#1976d2'; return 'transparent'; };
-  const isFlashing = (gameState === 'countdown' || gameState === 'intermission') && isBeatOn;
-
-  if (gameState === 'permission_prompt' || gameState === 'permission_denied') {
+  if (!browserSupportsSpeechRecognition) {
     return (
-        <Paper sx={{ width: '100%', maxWidth: '900px', p: 4, borderRadius: 5, textAlign: 'center' }}>
-            {gameState === 'permission_prompt' ? (
-                <>
-                    <MicIcon color="primary" sx={{ fontSize: 60 }} />
-                    <Typography variant="h5" sx={{ mt: 2, fontFamily: 'Roboto, sans-serif' }}>เกมนี้ต้องใช้ไมโครโฟน</Typography>
-                    <Typography sx={{ mt: 1, mb: 3 }}>
-                        เพื่อเริ่มเล่นเกม โปรดอนุญาตให้เบราว์เซอร์เข้าถึงไมโครโฟนของคุณ
-                    </Typography>
-                    <Button variant="contained" size="large" onClick={handleRequestPermission}>พร้อมแล้ว! ขออนุญาตใช้ไมค์</Button>
-                </>
-            ) : (
-                <>
-                    <MicOffIcon color="error" sx={{ fontSize: 60 }} />
-                    <Typography variant="h5" sx={{ mt: 2, fontFamily: 'Roboto, sans-serif' }}>การเข้าถึงไมโครโฟนถูกปฏิเสธ</Typography>
-                    <Typography sx={{ mt: 1, mb: 3 }}>
-                        โปรดกดที่รูปแม่กุญแจ 🔒 บนแถบ URL แล้วอนุญาตให้เว็บไซต์นี้ใช้ไมโครโฟน จากนั้นรีเฟรชหน้าเว็บ
-                    </Typography>
-                    <Button variant="contained" onClick={() => window.location.reload()}>รีเฟรชหน้า</Button>
-                </>
-            )}
-        </Paper>
-    )
+      <Paper sx={{ p: 4, textAlign: 'center', maxWidth: '600px' }}>
+        <WarningIcon color="error" sx={{ fontSize: 60 }} />
+        <Typography variant="h6" color="error" sx={{ mt: 2 }}>
+          เบราว์เซอร์นี้ไม่รองรับการรู้จำเสียง
+        </Typography>
+        <Typography sx={{ mt: 1 }}>
+          โปรดใช้ Chrome, Edge หรือ Safari เวอร์ชันใหม่
+        </Typography>
+      </Paper>
+    );
   }
 
+  const getBorderColor = (index: number): string => { 
+    if (feedback[index] === 'correct') return '#4caf50'; 
+    if (feedback[index] === 'incorrect') return '#f44336'; 
+    if (index === activeIndex) return '#1976d2'; 
+    return 'transparent'; 
+  };
+  
+  const isFlashing = (gameState === 'countdown' || gameState === 'intermission') && isBeatOn;
+
+  // Permission screens
+  if (gameState === 'permission_prompt' || gameState === 'permission_denied') {
+    return (
+      <Paper sx={{ width: '100%', maxWidth: '600px', p: 4, borderRadius: 5, textAlign: 'center' }}>
+        {gameState === 'permission_prompt' ? (
+          <>
+            <MicIcon color="primary" sx={{ fontSize: 60 }} />
+            <Typography variant="h5" sx={{ mt: 2, fontFamily: 'Roboto, sans-serif' }}>
+              เกมนี้ต้องใช้ไมโครโฟน
+            </Typography>
+            <Typography sx={{ mt: 1, mb: 3 }}>
+              เพื่อเริ่มเล่นเกม โปรดอนุญาตให้เบราว์เซอร์เข้าถึงไมโครโฟนของคุณ
+            </Typography>
+            <Button variant="contained" size="large" onClick={handleRequestPermission}>
+              พร้อมแล้ว! ขออนุญาตใช้ไมค์
+            </Button>
+          </>
+        ) : (
+          <>
+            <MicOffIcon color="error" sx={{ fontSize: 60 }} />
+            <Typography variant="h5" sx={{ mt: 2, fontFamily: 'Roboto, sans-serif' }}>
+              การเข้าถึงไมโครโฟนถูกปฏิเสธ
+            </Typography>
+            <Typography sx={{ mt: 1, mb: 3 }}>
+              โปรดกดที่รูปแม่กุญแจ 🔒 บนแถบ URL แล้วอนุญาตให้เว็บไซต์นี้ใช้ไมโครโฟน จากนั้นรีเฟรชหน้าเว็บ
+            </Typography>
+            <Button variant="contained" onClick={() => window.location.reload()}>
+              รีเฟรชหน้า
+            </Button>
+          </>
+        )}
+      </Paper>
+    );
+  }
+
+  // Loading screen
+  if (gameState === 'loading') {
+    return (
+      <Paper sx={{ width: '100%', maxWidth: '600px', p: 4, borderRadius: 5, textAlign: 'center' }}>
+        <CircularProgress size={60} />
+        <Typography variant="h5" sx={{ mt: 3, mb: 2 }}>
+          กำลังเตรียมความพร้อม...
+        </Typography>
+        <Box sx={{ mb: 3 }}>
+          <Typography variant="body1" sx={{ mb: 1 }}>
+            ความคืบหน้า: {loadingProgress}%
+          </Typography>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              {resourceStatus.audio ? <CheckCircleIcon color="success" /> : <CircularProgress size={16} />}
+              <Typography variant="body2">โหลดเพลงพื้นหลัง</Typography>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              {resourceStatus.speech ? <CheckCircleIcon color="success" /> : <CircularProgress size={16} />}
+              <Typography variant="body2">ทดสอบระบบรู้จำเสียง</Typography>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              {resourceStatus.images ? <CheckCircleIcon color="success" /> : <CircularProgress size={16} />}
+              <Typography variant="body2">โหลดรูปภาพ</Typography>
+            </Box>
+          </Box>
+        </Box>
+        {errorMessage && (
+          <Alert severity="warning" sx={{ mt: 2 }}>
+            {errorMessage}
+          </Alert>
+        )}
+      </Paper>
+    );
+  }
+
+  // Main game screen
   return (
     <Paper 
       sx={{ 
@@ -283,7 +520,33 @@ const RhythmGame: React.FC = () => {
       }} 
       elevation={0}
     >
-      <Typography variant="h4" gutterBottom textAlign="center" sx={{ mb: 3 }}>หมู หมา กา ไก่</Typography>
+      {/* Debug info - remove in production */}
+      {process.env.NODE_ENV === 'development' && (
+        <Box sx={{ position: 'fixed', top: 10, right: 10, background: 'rgba(0,0,0,0.8)', color: 'white', p: 1, borderRadius: 1, fontSize: '12px' }}>
+          <div>State: {gameState}</div>
+          <div>Audio: {resourceStatus.audio ? '✓' : '✗'}</div>
+          <div>Speech: {resourceStatus.speech ? '✓' : '✗'}</div>
+          <div>Images: {resourceStatus.images ? '✓' : '✗'}</div>
+          <div>Progress: {loadingProgress}%</div>
+        </Box>
+      )}
+
+      <Typography variant="h4" gutterBottom textAlign="center" sx={{ mb: 3 }}>
+        หมู หมา กา ไก่
+      </Typography>
+      
+      {/* Resource status indicators */}
+      {gameState === 'ready' && !Object.values(resourceStatus).every(status => status) && (
+        <Alert severity="warning" sx={{ mb: 3 }}>
+          <Typography variant="body2">
+            ทรัพยากรบางส่วนไม่พร้อม: 
+            {!resourceStatus.audio && ' เสียงเพลง'}
+            {!resourceStatus.speech && ' ระบบรู้จำเสียง'}
+            {!resourceStatus.images && ' รูปภาพ'}
+          </Typography>
+        </Alert>
+      )}
+
       {gameState === 'finished' ? (
         <Box sx={{ textAlign: 'center', my: 4 }}>
           <Typography variant="h5" sx={{ fontFamily: 'Roboto, sans-serif' }}>จบเกม!</Typography>
@@ -321,7 +584,7 @@ const RhythmGame: React.FC = () => {
               variant="contained" 
               color="primary" 
               onClick={startGame} 
-              disabled={gameState !== 'idle'}
+              disabled={gameState !== 'ready'}
               size="large"
               startIcon={<PlayArrowIcon />}
             >
@@ -339,7 +602,9 @@ const RhythmGame: React.FC = () => {
             </Button>
           </Stack>
           <Box sx={{ mt: 3, p: 2, background: '#f5f5f5', borderRadius: 3, textAlign: 'center', minHeight: '60px' }}>
-            <Typography variant="h6" color="secondary">คำที่พูดล่าสุด: <span style={{color: '#ff8f00', fontWeight: 'bold'}}>{transcript}</span></Typography>
+            <Typography variant="h6" color="secondary">
+              คำที่พูดล่าสุด: <span style={{color: '#ff8f00', fontWeight: 'bold'}}>{transcript}</span>
+            </Typography>
           </Box>
         </>
       )}
