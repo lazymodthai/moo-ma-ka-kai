@@ -18,7 +18,7 @@ import { allImages, type ImageDataObject } from '../data/imageData';
 import BackgroundMusic from '../assets/background-music.mp3';
 
 // --- Constants & Config ---
-const TEMPO_BPM = 182;
+const TEMPO_BPM = 183;
 const TOTAL_IMAGES = 8;
 const TOTAL_ROUNDS = 10;
 const PRE_GAME_COUNTDOWN = 16;
@@ -347,7 +347,8 @@ const RhythmGame: React.FC = () => {
 
   // Main Game Loop Hook
   useInterval(() => { 
-    setIsBeatOn(prev => !prev); 
+    setIsBeatOn(true);
+    setTimeout(() => setIsBeatOn(false), 100); 
     switch (gameState) { 
       case 'countdown': 
         if (countdown > 1) setCountdown(prev => prev - 1); 
