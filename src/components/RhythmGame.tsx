@@ -101,7 +101,7 @@ const RhythmGame: React.FC = () => {
 
       if (audioContext.state === 'suspended') {
         console.log("AudioContext suspended, resuming...");
-        await audioContext.resume();
+        // await audioContext.resume();
         console.log("AudioContext resumed:", audioContext.state);
       }
 
