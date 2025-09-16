@@ -192,7 +192,7 @@ const RhythmGame: React.FC = () => {
       
       let loadedCount = 0;
       const imagePromises = allImages.map((item, index) => 
-        new Promise<void>((resolve, reject) => {
+        new Promise<void>((resolve) => {
           const img = new Image();
           img.onload = () => {
             loadedCount++;
