@@ -8,6 +8,8 @@ import ScoreboardIcon from '@mui/icons-material/Scoreboard';
 import ReplayIcon from '@mui/icons-material/Replay';
 import MicIcon from '@mui/icons-material/Mic';
 import MicOffIcon from '@mui/icons-material/MicOff';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import StopIcon from '@mui/icons-material/Stop';
 
 import { useInterval } from '../hooks/useInterval';
 import { allImages, type ImageDataObject } from '../data/imageData';
@@ -102,7 +104,9 @@ const RhythmGame: React.FC = () => {
 
   // Speech Recognition Keep-Alive Hook
   useEffect(() => { 
-    if (!['idle', 'finished', 'permission_prompt', 'permission_denied'].includes(gameState) && !listening) { 
+    const isGameActive = ['countdown', 'running', 'intermission'].includes(gameState);
+    if (isGameActive && !listening) { 
+      console.log("Speech recognition keep-alive triggered. Restarting...");
       SpeechRecognition.startListening(speechRecognitionOptions); 
     } 
   }, [listening, gameState]);
@@ -203,7 +207,15 @@ const RhythmGame: React.FC = () => {
     try {
       await navigator.mediaDevices.getUserMedia({ audio: true });
       console.log("Microphone permission granted!");
-      setGameState('idle');
+      
+      // "Prime the Engine" FIX
+      SpeechRecognition.startListening(speechRecognitionOptions);
+      setTimeout(() => {
+        SpeechRecognition.stopListening();
+        console.log("Speech engine primed and ready.");
+        setGameState('idle');
+      }, 200);
+
     } catch (error) {
       console.error("Microphone permission was denied:", error);
       setGameState('permission_denied');
@@ -230,7 +242,7 @@ const RhythmGame: React.FC = () => {
     setActiveIndex(-1); 
   };
   
-  // Render Logic
+  // --- Render Logic ---
   if (!browserSupportsSpeechRecognition) return <Typography color="error">Browser doesn't support speech recognition.</Typography>;
   const getBorderColor = (index: number): string => { if (feedback[index] === 'correct') return '#4caf50'; if (feedback[index] === 'incorrect') return '#f44336'; if (index === activeIndex) return '#1976d2'; return 'transparent'; };
   const isFlashing = (gameState === 'countdown' || gameState === 'intermission') && isBeatOn;
@@ -305,8 +317,26 @@ const RhythmGame: React.FC = () => {
             ))}
           </Grid>
           <Stack direction="row" spacing={2} justifyContent="center" sx={{ mt: 4 }}>
-            <Button variant="contained" color="primary" onClick={startGame} disabled={gameState !== 'idle'}>เริ่มเกม</Button>
-            <Button variant="contained" color="secondary" onClick={stopGame} disabled={!['countdown', 'running', 'intermission'].includes(gameState)}>หยุด</Button>
+            <Button 
+              variant="contained" 
+              color="primary" 
+              onClick={startGame} 
+              disabled={gameState !== 'idle'}
+              size="large"
+              startIcon={<PlayArrowIcon />}
+            >
+              เริ่มเกม
+            </Button>
+            <Button 
+              variant="contained" 
+              color="secondary" 
+              onClick={stopGame} 
+              disabled={!['countdown', 'running', 'intermission'].includes(gameState)}
+              size="large"
+              startIcon={<StopIcon />}
+            >
+              หยุด
+            </Button>
           </Stack>
           <Box sx={{ mt: 3, p: 2, background: '#f5f5f5', borderRadius: 3, textAlign: 'center', minHeight: '60px' }}>
             <Typography variant="h6" color="secondary">คำที่พูดล่าสุด: <span style={{color: '#ff8f00', fontWeight: 'bold'}}>{transcript}</span></Typography>
