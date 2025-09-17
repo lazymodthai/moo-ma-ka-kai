@@ -2,3 +2,6 @@
   font-family: "Itim", cursive !important;
   -ms-overflow-style: none;
 }
+#root {
+  background-color: #d1704aff;
+}
