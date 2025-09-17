@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
 import { Box, Grid, Paper, Typography, Button, Stack, keyframes, CircularProgress, Alert } from '@mui/material';
 import { styled } from '@mui/material/styles';
-import ScoreboardIcon from '@mui/icons-material/Scoreboard';
+// import ScoreboardIcon from '@mui/icons-material/Scoreboard';
 import ReplayIcon from '@mui/icons-material/Replay';
 import MicIcon from '@mui/icons-material/Mic';
 import MicOffIcon from '@mui/icons-material/MicOff';
