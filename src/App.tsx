@@ -7,7 +7,7 @@ function App() {
   return (
     <>
       <CssBaseline />
-      <Container maxWidth="lg">
+      <Container maxWidth="lg" sx={{bgcolor: '#d1704aff'}}>
         <Box
           display="flex"
           flexDirection="column"

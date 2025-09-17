@@ -604,10 +604,10 @@ const RhythmGame: React.FC = () => {
         <>
           <Stack direction="row" justifyContent="space-around" alignItems="center" sx={{ mb: 3, p: 2, background: 'rgba(255, 224, 130, 0.2)', borderRadius: 4 }}>
             <Typography variant="h6">รอบที่: {currentRound > 0 ? currentRound : '-'} / {TOTAL_ROUNDS}</Typography>
-            <Stack direction="row" alignItems="center" spacing={1}>
+            {/* <Stack direction="row" alignItems="center" spacing={1}>
               <ScoreboardIcon color="primary" />
               <Typography variant="h6">คะแนน: {score}</Typography>
-            </Stack>
+            </Stack> */}
           </Stack>
           <Grid container spacing={2}>
             {gameImages.map((item, index) => (
@@ -648,9 +648,14 @@ const RhythmGame: React.FC = () => {
               หยุด
             </Button>
           </Stack>
-          <Box sx={{ mt: 3, p: 2, background: '#f5f5f5', borderRadius: 3, textAlign: 'center', minHeight: '60px' }}>
+          {/* <Box sx={{ mt: 3, p: 2, background: '#f5f5f5', borderRadius: 3, textAlign: 'center', minHeight: '60px' }}>
             <Typography variant="h6" color="secondary">
               คำที่พูดล่าสุด: <span style={{color: '#ff8f00', fontWeight: 'bold'}}>{transcript}</span>
+            </Typography>
+          </Box> */}
+          <Box sx={{ mt: 3, p: 2, background: '#f5f5f5', borderRadius: 3, textAlign: 'center', minHeight: '60px' }}>
+            <Typography variant="h6" color="secondary">
+              ระบบตรวจจับเสียงอยู่ระหว่างการพัฒนา
             </Typography>
           </Box>
         </>
