@@ -74,7 +74,20 @@ const RhythmGame: React.FC = () => {
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [errorMessage, setErrorMessage] = useState('');
   
-  const { transcript, listening, resetTranscript, browserSupportsSpeechRecognition } = useSpeechRecognition();
+  const { transcript, finalTranscript, listening, resetTranscript, browserSupportsSpeechRecognition } = useSpeechRecognition();
+
+  // Set speech recognition grammar from imageData
+  useEffect(() => {
+    const recognition = SpeechRecognition.getRecognition();
+    if (recognition && (window.SpeechGrammarList || (window as any).webkitSpeechGrammarList)) {
+      const words = allImages.map(img => img.text).join(' | ');
+      const grammar = `#JSGF V1.0; grammar gameWords; public <word> = ${words};`;
+      const speechRecognitionList = new (window.SpeechGrammarList || (window as any).webkitSpeechGrammarList)();
+      speechRecognitionList.addFromString(grammar, 1);
+      recognition.grammars = speechRecognitionList;
+      console.log("Speech recognition grammar set with words:", words);
+    }
+  }, []);
 
   // Web Audio API Refs
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -648,16 +661,16 @@ const RhythmGame: React.FC = () => {
               หยุด
             </Button>
           </Stack>
-          {/* <Box sx={{ mt: 3, p: 2, background: '#f5f5f5', borderRadius: 3, textAlign: 'center', minHeight: '60px' }}>
+          <Box sx={{ mt: 3, p: 2, background: '#f5f5f5', borderRadius: 3, textAlign: 'center', minHeight: '60px' }}>
             <Typography variant="h6" color="secondary">
               คำที่พูดล่าสุด: <span style={{color: '#ff8f00', fontWeight: 'bold'}}>{transcript}</span>
             </Typography>
-          </Box> */}
-          <Box sx={{ mt: 3, p: 2, background: '#f5f5f5', borderRadius: 3, textAlign: 'center', minHeight: '60px' }}>
+          </Box>
+          {/* <Box sx={{ mt: 3, p: 2, background: '#f5f5f5', borderRadius: 3, textAlign: 'center', minHeight: '60px' }}>
             <Typography variant="h6" color="secondary">
               ระบบตรวจจับเสียงอยู่ระหว่างการพัฒนา
             </Typography>
-          </Box>
+          </Box> */}
         </>
       )}
     </Paper>
